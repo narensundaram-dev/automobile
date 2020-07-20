@@ -56,7 +56,7 @@ class Scraper:
     def get(self):
         df = pd.read_excel("input.xlsx")
 
-        retailers = list(df[df.columns[0]])[:1]
+        retailers = list(df[df.columns[0]])
         count = 1
         workers = self.settings["workers"]["value"]
         with ThreadPoolExecutor(max_workers=workers) as executor:        
