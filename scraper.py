@@ -52,57 +52,72 @@ class Scraper:
         self.chrome_log_path = '/dev/null' if sys.platform == "linux" else "NUL"
         self.chrome_options = webdriver.ChromeOptions()
         self.chrome_options.add_argument('--headless')
+        self.chrome_options.add_argument("--disable-extensions")
+        self.chrome_options.add_argument("--disable-gpu")
+        self.chrome_options.add_argument("--no-sandbox")
 
     def get(self):
         df = pd.read_excel("input.xlsx")
 
         retailers = list(df[df.columns[0]])
+        cities = list(df[df.columns[2]])
         count = 1
         workers = self.settings["workers"]["value"]
         with ThreadPoolExecutor(max_workers=workers) as executor:        
-            for info in executor.map(self.get_from_google, retailers):
+            for info in executor.map(self.get_from_google, retailers, cities):
                 if info:  # {"retailer": "xxxx", "mobile1": "xxxx", "mobile2": "xxxx"}
                     self.data.append(info)
                 if count % 20 == 0:
                     log.info("So far {} has been fetched ...".format(count))
                 count += 1
 
-    def get_from_google(self, retailer):
-        data = {"retailer": retailer}
-        retailer = re.sub(r"\s*\(.*\)", "", retailer).replace(" ", "+")
+    def get_from_google(self, retailer, city):
+        data = {"retailer": retailer, "city": city}
+        retailer = re.sub(r"\s*\(.*\)", "", retailer).replace(" ", "+").strip()
+        query = f"{retailer}+{city}"
+
+        def get_data_from_card(card):
+            span_mobile = card.find("span", class_="rllt__details").find_all("div")[2].get_text().strip()
+            match_mobile = re.search(r"\d{5,6}\s\d{5}", span_mobile)
+            match_landline = re.search(r"\d{2,3}\s\d{4}\s\d{4}", span_mobile)
+
+            contact_nos = []
+            contact_nos.append(match_mobile.group(0)) if match_mobile else ""
+            contact_nos.append(match_landline.group(0)) if match_landline else ""
+            return contact_nos
 
         chrome = webdriver.Chrome(self.settings["driver_path"]["value"], chrome_options=self.chrome_options, service_log_path=self.chrome_log_path)
-        url = self.url_google.format(retailer)
-        print(url)
+        url = self.url_google.format(query)
+        data["url"] = url
+
         chrome.get(url)
         try:
             wait = self.settings["page_load_timeout"]["value"]
             WebDriverWait(chrome, wait).until(EC.presence_of_element_located((By.CLASS_NAME, "rl_full-list")))
             soup = BeautifulSoup(chrome.page_source, "html.parser")
 
-            with open("source.html", "w+") as f:
-                f.write(chrome.page_source)
-
-            count = 1
-            for card in soup.select("div.uMdZh.rl-qs-crs-t.mnr-c"):
-                span_mobile = card.find("span", class_="rllt__details").find_all("div")[2].get_text().strip()
-                match_mobile = re.search(r"\d{5,6}\s\d{5}", span_mobile)
-                match_landline = re.search(r"\d{2,3}\s\d{4}\s\d{4}", span_mobile)
-
-                print("\n", span_mobile, "\n")
-
-                contact_nos = []
-                contact_nos.append(match_mobile.group(0)) if match_mobile else ""
-                contact_nos.append(match_landline.group(0)) if match_landline else ""
-
+            cards = soup.select("div.uMdZh.rl-qs-crs-t.mnr-c")
+            if len(cards) == 1:
+                contact_nos = get_data_from_card(cards[0])
                 if contact_nos:
-                    data[f"mobile{count}"] = ",".join(contact_nos)
-                    count += 1
+                    data[f"mobile1"] = ",".join(contact_nos)
+            else:
+                count = 1
+                for card in cards:
+                    dom_title = card.find("div", role="heading")
+                    if dom_title:
+                        title = dom_title.get_text().strip()
 
-                if count > 10:
-                    break
+                        if title.replace(" ", "").lower() == data["retailer"].replace("+", "").lower():
+                            contact_nos = get_data_from_card(card)
+                            if contact_nos:
+                                data[f"mobile{count}"] = ",".join(contact_nos)
+                                count += 1
+
+                            if count > 10:
+                                break
         except (TimeoutException, Exception) as err:
-            log.error(f"Couldn't find the mobile number for: {data['retailer']}")
+            pass
         finally:
             chrome.close()
             return data
