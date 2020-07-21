@@ -108,7 +108,7 @@ class Scraper:
                     if dom_title:
                         title = dom_title.get_text().strip()
 
-                        if title.replace(" ", "").lower() == data["retailer"].replace("+", "").lower():
+                        if title.split(" ")[0].lower() == data["retailer"].split("+")[0].lower():
                             contact_nos = get_data_from_card(card)
                             if contact_nos:
                                 data[f"mobile{count}"] = ",".join(contact_nos)
