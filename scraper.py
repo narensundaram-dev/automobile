@@ -51,7 +51,7 @@ class Scraper:
 
         self.chrome_log_path = '/dev/null' if sys.platform == "linux" else "NUL"
         self.chrome_options = webdriver.ChromeOptions()
-        self.chrome_options.add_argument('--headless')
+        # self.chrome_options.add_argument('--headless')
         self.chrome_options.add_argument("--disable-extensions")
         self.chrome_options.add_argument("--disable-gpu")
         self.chrome_options.add_argument("--no-sandbox")
